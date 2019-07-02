@@ -1,74 +1,22 @@
-import sqlite3
-import numpy as np
-import io
+from create_database import create_database
+from create_database import open_database
+from fill_base import fill_base_test
+from test_database import test_base
+import mpi4py
+from mpi4py import MPI
+if __name__ == "__main__":
+    db_name = "chemdatabase.db"
+    create_database(db_name)
+    conn, cursor = open_database(db_name)
 
-def adapt_array(arr):
-    out = io.BytesIO()
-    np.save(out, arr)
-    out.seek(0)
-    return sqlite3.Binary(out.read())
+    #comm = MPI.COMM_WORLD
 
-def convert_array(text):
-    out = io.BytesIO(text)
-    out.seek(0)
-    return np.load(out)
-
-sqlite3.register_adapter(np.ndarray, adapt_array)
-sqlite3.register_converter("array", convert_array)
+    #print("Hello! I'm rank %d from %d running in total..." % (comm.rank, comm.size))
 
 
-conn = sqlite3.connect("chemdatabase.db", detect_types=sqlite3.PARSE_DECLTYPES)
-cursor = conn.cursor()
-
-#Create table
-cursor.execute("""CREATE TABLE IF NOT EXISTS molecules
-                  (id_molecule integer PRIMARY KEY,
-                   inchi_key text NOT NULL,
-                   inchi text NOT NULL,
-                   canonical_smiles text NOT NULL);
-                  """)
-
-cursor.execute("""CREATE TABLE IF NOT EXISTS tasks  
-                  (id_task integer PRIMARY KEY ,
-                   descr text NOT NULL)
-                  """)
-
-cursor.execute("""CREATE TABLE IF NOT EXISTS tasks_running  
-                  (id_task integer, 
-                   id_molecule integer,
-                   completed integer,
-                   FOREIGN KEY (id_task) REFERENCES tasks(id_task) ON UPDATE NO ACTION  ON DELETE NO ACTION,
-                   FOREIGN KEY (id_molecule) REFERENCES molecules(id_molecule) ON UPDATE  NO ACTION ON DELETE NO ACTION );
-                  """)
-cursor.execute("""CREATE TABLE IF NOT EXISTS descriptors  
-                  (id_descriptor integer PRIMARY KEY ,
-                   descriptor text, 
-                   version text);
-                   
-                  """)
-cursor.execute("""CREATE TABLE IF NOT EXISTS descriptors_values 
-                  (id_molecule integer,
-                   id_descriptor integer,
-                   id_task integer, 
-                   valid integer,
-                   value array,
-                   FOREIGN KEY (id_task) REFERENCES tasks(id_task) ON UPDATE NO ACTION  ON DELETE NO ACTION,
-                   FOREIGN KEY (id_molecule) REFERENCES molecules(id_molecule) ON UPDATE  NO ACTION ON DELETE NO ACTION,
-                   FOREIGN KEY (id_descriptor) REFERENCES descriptors(id_descriptor) ON UPDATE  NO ACTION ON DELETE NO ACTION);
-                  """)
-
-cursor.execute("""CREATE TABLE IF NOT EXISTS endpoints  
-                  (id_endpoint integer PRIMARY KEY,
-                   desc text,
-                   type text);
-                  """)
-
-cursor.execute("""CREATE TABLE IF NOT EXISTS experimental_data
-                  (id_molecule integer,
-                   id_endpoint integer,
-                   value float,
-                   FOREIGN KEY (id_molecule) REFERENCES molecules(id_molecule) ON UPDATE  NO ACTION ON DELETE NO ACTION,
-                   FOREIGN KEY (id_endpoint) REFERENCES endpoints(id_endpoint) ON UPDATE  NO ACTION ON DELETE NO ACTION);
-                  """)
-conn.commit()
-conn.close()
+    #comm.Barrier()  # wait for everybody to synchronize _here_
+    fill_base_test(cursor)
+    test_base(cursor)
+    conn.commit()
+    cursor.close()
+    conn.close()
