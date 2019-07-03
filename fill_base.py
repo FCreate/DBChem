@@ -11,7 +11,7 @@ from rdkit import Chem
 import numpy as np
 from rdkit.Chem.rdMolDescriptors import GetMorganFingerprintAsBitVect
 from rdkit.DataStructs.cDataStructs import ConvertToNumpyArray
-
+from mpi4py.futures import MPIPoolExecutor
 def canonize_smile (sm):
     m = Chem.MolFromSmiles(sm)
     try: return Chem.MolToSmiles(m, canonical=True, isomericSmiles=False)
@@ -27,8 +27,6 @@ def randomStringwithDigitsAndSymbols(stringLength=10):
 def func(smiles):
     value = [np.random.randn(random.randint(1,1825),1) for i in range(len(smiles))]
     return value
-
-
 
 morded_calculator = Calculator(descriptors, ignore_3D=False)
 
@@ -123,130 +121,129 @@ def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
         yield l[i:i + n]
-def fill_base_real(cursor, conn, name_of_task, descr_task):
-    comm = MPI.COMM_WORLD
-    rank = comm.rank
-    size = comm.size
-    if (comm.rank==0):
-        name_of_task = "Hello world"
-        cursor.execute("""insert into 'tasks' (descr) values (?)""", (name_of_task,))
-        conn.commit()
 
-        id_task = list(cursor.execute("SELECT last_insert_rowid()"))[0][0]
+def calculate_inchi(smile):
+    return inchi.MolToInchi(Chem.MolFromSmiles(smile))
 
-        df_melt = pd.read_csv("melting_prepared_282517.csv")
-        names_of_columns = list(df_melt.columns)
-        smiles = list(df_melt[df_melt.columns[0]])
-        #smiles = [canonize_smile(smile) for smile in smiles]
+def calculate_inchi_key(smile):
+    return inchi.MolToInchiKey(Chem.MolFromSmiles(smile))
 
-        smiles_tuple = "("
-        for smile in smiles:
-            smiles_tuple += "'" + smile + "', "
-        smiles_tuple = smiles_tuple[:-2]
-        smiles_tuple += ")"
+def mordred_func(smile):
+    temp = morded(smile)
+    if not (temp is None):
+        return temp
+    else:
+        return [0] * 1826
 
-        existed_smiles = list(cursor.execute("""Select * From molecules Where canonical_smiles in """ + smiles_tuple))
-        only_existed_smiles = [data[3] for data in existed_smiles]
+def fill_base_real(cursor, conn, name_of_file,  name_of_task, name_of_descriptor, version_of_descriptor):
+    cursor.execute("""insert into 'tasks' (descr) values (?)""", (name_of_task,))
+    conn.commit()
 
-        not_existed_smiles = (list(set(smiles) - set(only_existed_smiles)))
-        print(len(list(set(only_existed_smiles))) + len(list(set(not_existed_smiles))) == len(set(smiles)))
-        print(len(not_existed_smiles))
-        # Вот эту часть нужно распараллелить
-        size_per_processor = round(len(not_existed_smiles)/size)+1
-        chunked_smiles = list(chunks(not_existed_smiles, size_per_processor))
-        my_smiles = chunked_smiles[0]
-        for i in range(1, size):
-            comm.send(chunked_smiles[i], dest= i, tag=0)
+    id_task = list(cursor.execute("SELECT last_insert_rowid()"))[0][0]
 
-        my_inchi_smiles = [inchi.MolToInchi(Chem.MolFromSmiles(smile)) for smile in my_smiles]
-        my_inchikey = [inchi.MolToInchiKey(Chem.MolFromSmiles(smile)) for smile in my_smiles]
+    df_melt = pd.read_csv(name_of_file)
+    names_of_columns = list(df_melt.columns)
+    smiles = list(df_melt[df_melt.columns[0]])
 
-        inchi_smiles = []
-        inchikey = []
-        inchi_smiles.extend(my_inchi_smiles)
-        inchikey.extend(my_inchikey)
-        for i in range(1, size):
-            my_inchi_smiles = comm.recv(source = i,tag=0)
-            my_inchikey= comm.recv(source= i, tag=0)
-            inchi_smiles.extend(my_inchi_smiles)
-            inchikey.extend(my_inchikey)
+    smiles_tuple = "("
+    for smile in smiles:
+        smiles_tuple += "'" + smile + "', "
+    smiles_tuple = smiles_tuple[:-2]
+    smiles_tuple += ")"
 
-        ziped_vals = zip(inchikey, inchi_smiles, smiles)
-        cursor.executemany("""insert into 'molecules' (inchi_key,inchi,canonical_smiles) values (?,?,?)""", ziped_vals)
-        conn.commit()
+    existed_smiles = list(cursor.execute("""Select * From molecules Where canonical_smiles in """ + smiles_tuple))
+    only_existed_smiles = [data[3] for data in existed_smiles]
 
-        existed_smiles = list(cursor.execute("""Select * From molecules Where canonical_smiles in """ + smiles_tuple))
-        smiles2ind = {}
-        for data in existed_smiles:
-            smiles2ind[data[3]] = data[0]
+    not_existed_smiles = (list(set(smiles) - set(only_existed_smiles)))
+    print(len(list(set(only_existed_smiles))) + len(list(set(not_existed_smiles))) == len(set(smiles)))
+    print(len(not_existed_smiles))
+    # Вот эту часть нужно распараллелить
+    executor = MPIPoolExecutor(max_workers=None)
+    inchi_smiles = []
+    inchikey = []
+    for result in executor.map(calculate_inchi, not_existed_smiles, chunksize=32):
+        inchi_smiles.append(result)
+    executor = MPIPoolExecutor(max_workers=None)
+    for result in executor.map(calculate_inchi, not_existed_smiles, chunksize=32):
+        inchikey.append(result)
 
-        names_of_columns = list(df_melt.columns)
-        features = names_of_columns[1:]
-        descriptions = [feature.split('_')[0] for feature in features]
-        types = ['_'.join(feature.split('_')[1:]) for feature in features]
-        ziped_endpoints = zip(descriptions, types)
-        cursor.executemany("""insert into 'endpoints' (desc, type) values (?,?)""", ziped_endpoints)
-        conn.commit()
+    ziped_vals = zip(inchikey, inchi_smiles, not_existed_smiles)
+    cursor.executemany("""insert into 'molecules' (inchi_key,inchi,canonical_smiles) values (?,?,?)""", ziped_vals)
+    conn.commit()
 
-        endpoint2ind = {}
-        db_endp = list(cursor.execute("""SELECT * FROM endpoints"""))
-        db_endp = [(data[0], data[1] + "_" + data[2]) for data in db_endp]
-        for name in db_endp:
-            endpoint2ind[name[1]] = name[0]
+    existed_smiles = list(cursor.execute("""Select * From molecules Where canonical_smiles in """ + smiles_tuple))
+    smiles2ind = {}
+    for data in existed_smiles:
+        smiles2ind[data[3]] = data[0]
 
-        df_melt = df_melt.drop(df_melt.columns[0], axis=1)
-        endpoints_vals = df_melt.values
+    names_of_columns = list(df_melt.columns)
+    features = names_of_columns[1:]
+    descriptions = [feature.split('_')[0] for feature in features]
+    types = ['_'.join(feature.split('_')[1:]) for feature in features]
+    ziped_endpoints = zip(descriptions, types)
+    cursor.executemany("""insert into 'endpoints' (desc, type) values (?,?)""", ziped_endpoints)
+    conn.commit()
 
-        # experimnetal data
-        ids_molecules = []
-        ids_endpoints = []
-        values_endpoints = []
-        for i in range(len(endpoints_vals[:, 0])):
-            for j in range(len(endpoints_vals[0, :])):
-                if (~np.isnan(endpoints_vals[i, j])):
-                    ids_molecules.append(smiles2ind[smiles[i]])
-                    ids_endpoints.append(endpoint2ind[names_of_columns[j + 1]])
-                    values_endpoints.append(endpoints_vals[i, j])
+    endpoint2ind = {}
+    db_endp = list(cursor.execute("""SELECT * FROM endpoints"""))
+    db_endp = [(data[0], data[1] + "_" + data[2]) for data in db_endp]
+    for name in db_endp:
+        endpoint2ind[name[1]] = name[0]
 
-        ziped_experimental_data = zip(ids_molecules, ids_endpoints, values_endpoints)
-        cursor.executemany("""insert into 'experimental_data' (id_molecule, id_endpoint, value) values (?,?,?)""",
-                           ziped_experimental_data)
-        conn.commit()
+    df_melt = df_melt.drop(df_melt.columns[0], axis=1)
+    endpoints_vals = df_melt.values
 
-        #Начинаем считать дескрипторы
-        my_mordred_descriptors = []
-        for smile in my_smiles:
-            temp = morded(smile)
-            if (not temp is None):
-                my_mordred_descriptors.append(np.array(morded(smile)).flatten())
-            else:
-                my_mordred_descriptors.append(np.array([0]*1826))
-        mordred_final = my_mordred_descriptors.copy()
-        for i in range(1,size):
-            temp_mordred = np.empty(len(chunked_smiles[i])*1826, dtype=np.float32)
-            comm.Recv(temp_mordred, source=i, tag=1)
-            temp_mordred = temp_mordred.reshape(-1, 1826)
-            mordred_final = np.concatenate((mordred_final, temp_mordred), axis = 0)
-        print(mordred_final.shape)
+    # experimnetal data
+    ids_molecules = []
+    ids_endpoints = []
+    values_endpoints = []
+    for i in range(len(endpoints_vals[:, 0])):
+        for j in range(len(endpoints_vals[0, :])):
+            if (~np.isnan(endpoints_vals[i, j])):
+                ids_molecules.append(smiles2ind[smiles[i]])
+                ids_endpoints.append(endpoint2ind[names_of_columns[j + 1]])
+                values_endpoints.append(endpoints_vals[i, j])
+
+    ziped_experimental_data = zip(ids_molecules, ids_endpoints, values_endpoints)
+    cursor.executemany("""insert into 'experimental_data' (id_molecule, id_endpoint, value) values (?,?,?)""",
+                       ziped_experimental_data)
+    conn.commit()
 
 
-    if(rank!=0):
-        my_smiles = comm.recv(source = 0, tag=0)
+    cursor.execute("""insert into 'descriptors' (descriptor, version) values (?,?)""", (name_of_descriptor, version_of_descriptor))
+    id_descr  = list(cursor.execute("SELECT last_insert_rowid()"))[0][0]
+    #Начинаем считать дескрипторы
+    #Заполняем таблицу tasks_running
+    ids_task = [id_task]*len(smiles)
+    ids_molecules = [smiles2ind[smile] for smile in smiles]
+    completed_arr = [0]*len(smiles)
+    ziped_tasks_running = zip(ids_task, ids_molecules, completed_arr)
+    cursor.executemany("""insert into 'tasks_running' (id_task, id_molecule, completed) values (?,?,?)""",ziped_tasks_running)
+    conn.commit()
 
-        my_inchi_smiles = [inchi.MolToInchi(Chem.MolFromSmiles(smile)) for smile in my_smiles]
-        my_inchikey = [inchi.MolToInchiKey(Chem.MolFromSmiles(smile)) for smile in my_smiles]
+    executor = MPIPoolExecutor(max_workers=None)
+    counter = 0
+    prev_update = 0
+    mordred_result = []
+    for result in executor.map(morded, smiles, chunksize=32):
+        mordred_result.append(result)
+        if (counter%10):
+            str_res = "("
+            for i in range(prev_update, counter+1):
+                str_res+=str(smiles2ind[smiles[i]])+", "
+            str_res = str_res[:-2]
+            str_res+=")"
+            cursor.execute("""UPDATE tasks_running SET completed = 1 WHERE id_task = """+str(id_task) +"""and id_molecule in """+str_res)
+            conn.commit()
+            id_descriptor = [id_descr]*len(mordred_result)
+            id_molecule = [smiles2ind[smiles[i]] for i in range(prev_update, counter+1)]
+            id_tasks = [id_task]*len(mordred_result)
+            valid = [1]*len(mordred_result)
+            value = [np.array(data) for data in mordred_result]
+            ziped_descr_vals = zip(id_molecule, id_descriptor, id_tasks, valid, value)
+            cursor.executemany("""insert into 'descriptors_values' (id_molecule, id_descriptor, id_task, valid, value) values (?,?,?,?,?)""",ziped_descr_vals)
+            conn.commit()
+            prev_update = counter + 1
+            mordred_result = []
 
-        comm.send(my_inchi_smiles, dest = 0, tag = 0)
-        comm.send(my_inchikey, dest = 0, tag = 0)
-
-        my_mordred = []
-        for smile in my_smiles:
-            temp = morded(smile)
-            if (not temp is None):
-                my_mordred.append(np.array(temp).reshape(1826))
-            else:
-                my_mordred.append(np.array([0] * 1826))
-        my_mordred = np.vstack(my_mordred).flatten()
-        print("i'm processor number ", rank, flush=True)
-        comm.Send(my_mordred, dest=0, tag=1)
-
+    counter+=1
