@@ -18,7 +18,7 @@ if __name__ == "__main__":
     #comm.Barrier()  # wait for everybody to synchronize _here_
     #fill_base_test(cursor)
     #test_base(cursor)
-    fill_base_real(cursor,conn, name_of_file="melting1000.csv", name_of_task="TestTask1000", name_of_descriptor="mordred", version_of_descriptor="1.0")
+    fill_base_real(cursor,conn, name_of_file="melting100.csv", name_of_task="TestTask1000", name_of_descriptor="mordred", version_of_descriptor="1.0")
 
     conn.commit()
     cursor.close()

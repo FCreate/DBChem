@@ -233,7 +233,7 @@ def fill_base_real(cursor, conn, name_of_file,  name_of_task, name_of_descriptor
                 str_res+=str(smiles2ind[smiles[i]])+", "
             str_res = str_res[:-2]
             str_res+=")"
-            cursor.execute("""UPDATE tasks_running SET completed = 1 WHERE id_task = """+str(id_task) +"""and id_molecule in """+str_res)
+            cursor.execute("""UPDATE tasks_running SET completed = 1 WHERE id_task = """+str(id_task) +""" and id_molecule in """+str_res)
             conn.commit()
             id_descriptor = [id_descr]*len(mordred_result)
             id_molecule = [smiles2ind[smiles[i]] for i in range(prev_update, counter+1)]
@@ -246,4 +246,24 @@ def fill_base_real(cursor, conn, name_of_file,  name_of_task, name_of_descriptor
             prev_update = counter + 1
             mordred_result = []
 
-    counter+=1
+        counter+=1
+    if (len(mordred_result)!=0):
+        str_res = "("
+        print("Counter ", counter)
+        for i in range(prev_update, counter):
+            str_res += str(smiles2ind[smiles[i]]) + ", "
+        str_res = str_res[:-2]
+        str_res += ")"
+        cursor.execute("""UPDATE tasks_running SET completed = 1 WHERE id_task =""" + str(
+            id_task) + """ and id_molecule in """ + str_res)
+        conn.commit()
+        id_descriptor = [id_descr] * len(mordred_result)
+        id_molecule = [smiles2ind[smiles[i]] for i in range(prev_update, counter)]
+        id_tasks = [id_task] * len(mordred_result)
+        valid = [1] * len(mordred_result)
+        value = [np.array(data) for data in mordred_result]
+        ziped_descr_vals = zip(id_molecule, id_descriptor, id_tasks, valid, value)
+        cursor.executemany(
+            """insert into 'descriptors_values' (id_molecule, id_descriptor, id_task, valid, value) values (?,?,?,?,?)""",
+            ziped_descr_vals)
+        conn.commit()
