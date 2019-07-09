@@ -28,7 +28,7 @@ def create_database(db_name):
                       (id_molecule integer PRIMARY KEY AUTOINCREMENT ,
                        inchi_key text NOT NULL,
                        inchi text NOT NULL,
-                       canonical_smiles text NOT NULL);
+                       canonical_smiles text NOT NULL UNIQUE);
                       """)
 
     cursor.execute("""CREATE TABLE IF NOT EXISTS tasks  

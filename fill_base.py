@@ -209,9 +209,12 @@ def fill_base_real(cursor, conn, name_of_file,  name_of_task, name_of_descriptor
                        ziped_experimental_data)
     conn.commit()
 
-
-    cursor.execute("""insert into 'descriptors' (descriptor, version) values (?,?)""", (name_of_descriptor, version_of_descriptor))
-    id_descr  = list(cursor.execute("SELECT last_insert_rowid()"))[0][0]
+    check_descr = list(cursor.execute("select * from descriptors where descriptor = '" + name_of_descriptor + "' and version = '" + version_of_descriptor + "'"))
+    if(len(check_descr)==0):
+        cursor.execute("""insert into 'descriptors' (descriptor, version) values (?,?)""", (name_of_descriptor, version_of_descriptor))
+        id_descr  = list(cursor.execute("SELECT last_insert_rowid()"))[0][0]
+    else:
+        id_descr = check_descr[0][0]
     #Начинаем считать дескрипторы
     #Заполняем таблицу tasks_running
     ids_task = [id_task]*len(smiles)
@@ -225,9 +228,12 @@ def fill_base_real(cursor, conn, name_of_file,  name_of_task, name_of_descriptor
     counter = 0
     prev_update = 0
     mordred_result = []
+    f = open("log.txt", 'w')
     for result in executor.map(morded, smiles, chunksize=32):
         mordred_result.append(result)
-        if (counter%10):
+        if ((counter%10000)==0):
+            f.write(str(counter)+"\n")
+            f.flush()
             str_res = "("
             for i in range(prev_update, counter+1):
                 str_res+=str(smiles2ind[smiles[i]])+", "
