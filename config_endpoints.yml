@@ -1,0 +1,8 @@
+main:
+    db_name : "chemdatabase.db"
+endpoints_list:
+    - o_mus_ipr_LD 
+    - o_rat_orl_TDLo 
+    - o_mus_ipr_LDLo 
+    - o_mus_orl_TDLo 
+    - o_rat_ipr_TDLo
