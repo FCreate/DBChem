@@ -1,8 +1,34 @@
 main:
-    db_name : "chemdatabase.db"
+    db_name : "chemdatabase_copy.db"
+    descriptor_name: "mordred"
+    version: "1.0"
 endpoints_list:
     - o_mus_ipr_LD 
     - o_rat_orl_TDLo 
     - o_mus_ipr_LDLo 
     - o_mus_orl_TDLo 
-    - o_rat_ipr_TDLo
+    - o_rat_ipr_TDLo 
+    - o_mus_ivn_LD 
+    - o_rat_ipr_LD 
+    - o_mus_orl_LD 
+    - o_mus_unr_LD 
+    - o_rat_unr_LD 
+    - o_mus_scu_LDLo 
+    - o_rat_scu_LD 
+    - o_mus_scu_LD 
+    - o_rat_ipr_LDLo 
+    - o_mus_ipr_TDLo 
+    - o_rbt_skn_LD 
+    - o_rat_orl_LD 
+    - o_rat_ivn_TDLo 
+    - o_rat_orl_LDLo 
+    - o_rbt_orl_LD 
+    - o_rbt_ivn_LD 
+    - o_rat_ivn_LD 
+    - o_mus_orl_LDLo 
+    - o_rat_skn_LD 
+    - o_mam_unr_LD 
+    - o_gpg_orl_LD 
+    - o_wmn_orl_TDLo 
+    - o_man_orl_TDLo 
+    - o_rat_scu_TDLo 

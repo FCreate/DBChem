@@ -243,7 +243,7 @@ def fill_base_real(cursor, conn, name_of_file,  name_of_task, name_of_descriptor
             conn.commit()
             id_descriptor = [id_descr]*len(mordred_result)
             id_molecule = [smiles2ind[smiles[i]] for i in range(prev_update, counter+1)]
-            id_tasks = [id_task]*len(mordred_result)
+            id_tasks = [id_task]*len(mordred_result) 
             valid = [1]*len(mordred_result)
             value = [np.array(data) for data in mordred_result]
             ziped_descr_vals = zip(id_molecule, id_descriptor, id_tasks, valid, value)

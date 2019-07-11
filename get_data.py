@@ -3,6 +3,7 @@ from create_database import open_database
 import pandas as pd
 import numpy as np
 import numpy.ma as ma
+import pickle
 
 class OurRobustToNanScaler():
     """
@@ -71,12 +72,18 @@ def get_data(yaml_file):
         endpoints_dict[index2smiles[key]] = endpoints_dict.pop(key)
     #Scaling
     df = pd.DataFrame.from_dict(endpoints_dict, orient="index", columns=endpoints_list)
-    endpoints_scaler = OurRobustToNanScaler()
-    df[:][:] = endpoints_scaler.fit_transform(df.values)
-
+    #endpoints_scaler = OurRobustToNanScaler()
+    #df[:][:] = endpoints_scaler.fit_transform(df.values)
+    #with open("endpoints_scaler.pk", 'wb') as f:
+    #    pickle.dump(endpoints_scaler, f)
     #get descriptors for molecules
     smiles_ind = list(set([data[0] for data in temp]))
     descriptors = cursor.execute("select * from descriptors_values where id_molecule in " + ("(" + ", ".join(str(x) for x in smiles_ind) + ")")).fetchall()
     ind2descriptors = {index2smiles[data[0]]:np.nan_to_num(data[4]) for data in descriptors}
+    smiles2descriptors = {index2smiles[data[0]]: np.nan_to_num(data[4])[0] for data in descriptors}
+    df.to_csv("db_endpoints.csv")
+    with open("db_descriptors.pk", 'wb') as f:
+        pickle.dump(smiles2descriptors, f)
+    return df, smiles2descriptors
 
 
